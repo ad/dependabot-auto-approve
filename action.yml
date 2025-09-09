@@ -147,7 +147,7 @@ runs:
             echo "   3. The repository requires review from code owners"
             echo ""
             echo "💡 To enable auto-approval, use a PAT with 'repo' scope:"
-            echo "   github-token: \${{ secrets.PAT_TOKEN }}"
+            echo "   github-token: \$\{{ secrets.PAT_TOKEN }}"
             echo ""
             echo "📝 Continuing with merge attempt..."
           fi
