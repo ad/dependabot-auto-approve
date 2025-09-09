@@ -1,0 +1,20 @@
+# Example workflow for using Dependabot Auto Manage Action
+
+name: Dependabot Auto Manage
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.user.login == 'app/dependabot'
+    steps:
+      - name: Dependabot auto-manage
+        uses: ad/dependabot-auto-approve@v1
+        with:
+          dependency-type: 'direct:production'
+          merge-method: 'squash'
+          add-label: 'dependabot-approved'

@@ -1,0 +1,132 @@
+name: 'Dependabot Auto Manage'
+description: 'Automatically approve and merge Dependabot PRs for production dependencies'
+author: 'ad'
+
+inputs:
+  github-token:
+    description: 'GitHub token for API calls'
+    required: false
+    default: ${{ github.token }}
+  dependency-type:
+    description: 'Type of dependencies to auto-merge (direct:production, direct:development, all)'
+    required: false
+    default: 'direct:production'
+  merge-method:
+    description: 'Merge method to use (merge, squash, rebase)'
+    required: false
+    default: 'squash'
+  auto-merge:
+    description: 'Enable auto-merge (requires branch protection rules)'
+    required: false
+    default: 'false'
+  add-label:
+    description: 'Label to add to approved PRs'
+    required: false
+    default: 'dependabot-approved'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check if PR is from Dependabot
+      id: check_dependabot
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          # For pull_request events, check the user from event
+          if [[ "${{ github.event.pull_request.user.login }}" = "dependabot[bot]" || "${{ github.event.pull_request.user.login }}" = "app/dependabot" ]]; then
+            echo "is_dependabot=true" >> $GITHUB_OUTPUT
+            echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+            echo "pr_url=${{ github.event.pull_request.html_url }}" >> $GITHUB_OUTPUT
+          else
+            echo "is_dependabot=false" >> $GITHUB_OUTPUT
+            echo "❌ PR is not from Dependabot (author: ${{ github.event.pull_request.user.login }})"
+            exit 0
+          fi
+        else
+          echo "❌ This action only works with pull_request events"
+          exit 1
+        fi
+
+    - name: Get dependency metadata
+      id: metadata
+      if: steps.check_dependabot.outputs.is_dependabot == 'true'
+      uses: dependabot/fetch-metadata@v2
+
+    - name: Check dependency type
+      id: check_dependency
+      if: steps.check_dependabot.outputs.is_dependabot == 'true'
+      shell: bash
+      run: |
+        DEPENDENCY_TYPE="${{ steps.metadata.outputs.dependency-type }}"
+        TARGET_TYPE="${{ inputs.dependency-type }}"
+        
+        echo "Dependency type: $DEPENDENCY_TYPE"
+        echo "Target type: $TARGET_TYPE"
+        
+        if [[ "$TARGET_TYPE" = "all" || "$DEPENDENCY_TYPE" = "$TARGET_TYPE" ]]; then
+          echo "should_process=true" >> $GITHUB_OUTPUT
+          echo "✅ Dependency type matches target: $DEPENDENCY_TYPE"
+        else
+          echo "should_process=false" >> $GITHUB_OUTPUT
+          echo "⏭️ Skipping: dependency type $DEPENDENCY_TYPE doesn't match target $TARGET_TYPE"
+        fi
+
+    - name: Create label if it doesn't exist
+      if: steps.check_dependency.outputs.should_process == 'true' && inputs.add-label != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        LABEL_NAME="${{ inputs.add-label }}"
+        set -euo pipefail
+        
+        # Check if label exists
+        EXISTING_LABEL=$(gh label list --repo "${{ github.repository }}" --limit 1000 --json name --jq ".[] | select(.name==\"$LABEL_NAME\") | .name" || echo "")
+        
+        if [ -z "$EXISTING_LABEL" ]; then
+          echo "Creating label: $LABEL_NAME"
+          gh label create "$LABEL_NAME" --repo "${{ github.repository }}" --color "0E8A16" --description "Auto-approved Dependabot PRs"
+        else
+          echo "Label already exists: $LABEL_NAME"
+        fi
+
+    - name: Add label to PR
+      if: steps.check_dependency.outputs.should_process == 'true' && inputs.add-label != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        echo "Adding label '${{ inputs.add-label }}' to PR #${{ steps.check_dependabot.outputs.pr_number }}"
+        gh pr edit "${{ steps.check_dependabot.outputs.pr_url }}" --add-label "${{ inputs.add-label }}"
+
+    - name: Approve PR
+      if: steps.check_dependency.outputs.should_process == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        echo "Approving PR #${{ steps.check_dependabot.outputs.pr_number }}"
+        gh pr review --repo "${{ github.repository }}" --approve "${{ steps.check_dependabot.outputs.pr_number }}"
+
+    - name: Merge PR
+      if: steps.check_dependency.outputs.should_process == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        MERGE_FLAGS="--${{ inputs.merge-method }}"
+        
+        if [ "${{ inputs.auto-merge }}" = "true" ]; then
+          MERGE_FLAGS="$MERGE_FLAGS --auto"
+          echo "Enabling auto-merge for PR #${{ steps.check_dependabot.outputs.pr_number }}"
+        else
+          echo "Merging PR #${{ steps.check_dependabot.outputs.pr_number }}"
+        fi
+        
+        gh pr merge --repo "${{ github.repository }}" $MERGE_FLAGS "${{ steps.check_dependabot.outputs.pr_number }}"
+
+branding:
+  icon: 'check-circle'
+  color: 'green'
