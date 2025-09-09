@@ -23,6 +23,12 @@ inputs:
     description: 'Label to add to approved PRs'
     required: false
     default: 'dependabot-approved'
+  pr-number:
+    description: 'PR number (for manual dispatch workflows)'
+    required: false
+  pr-url:
+    description: 'PR URL (for manual dispatch workflows)'
+    required: false
 
 runs:
   using: 'composite'
@@ -33,33 +39,55 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
       run: |
-        if [ "${{ github.event_name }}" = "pull_request" ]; then
+        # Handle manual dispatch with provided PR details
+        if [ -n "${{ inputs.pr-number }}" ] && [ -n "${{ inputs.pr-url }}" ]; then
+          echo "is_dependabot=true" >> $GITHUB_OUTPUT
+          echo "pr_number=${{ inputs.pr-number }}" >> $GITHUB_OUTPUT
+          echo "pr_url=${{ inputs.pr-url }}" >> $GITHUB_OUTPUT
+          echo "✅ Manual dispatch: processing PR #${{ inputs.pr-number }}"
+        elif [ "${{ github.event_name }}" = "pull_request" ]; then
           # For pull_request events, check the user from event
           if [[ "${{ github.event.pull_request.user.login }}" = "dependabot[bot]" || "${{ github.event.pull_request.user.login }}" = "app/dependabot" ]]; then
             echo "is_dependabot=true" >> $GITHUB_OUTPUT
             echo "pr_number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
             echo "pr_url=${{ github.event.pull_request.html_url }}" >> $GITHUB_OUTPUT
+            echo "✅ Automatic: processing Dependabot PR #${{ github.event.pull_request.number }}"
           else
             echo "is_dependabot=false" >> $GITHUB_OUTPUT
             echo "❌ PR is not from Dependabot (author: ${{ github.event.pull_request.user.login }})"
             exit 0
           fi
         else
-          echo "❌ This action only works with pull_request events"
+          echo "❌ This action requires either pull_request event or manual dispatch with pr-number and pr-url inputs"
           exit 1
         fi
 
     - name: Get dependency metadata
       id: metadata
-      if: steps.check_dependabot.outputs.is_dependabot == 'true'
+      if: steps.check_dependabot.outputs.is_dependabot == 'true' && github.event_name == 'pull_request'
       uses: dependabot/fetch-metadata@v2
+      
+    - name: Set dependency type for manual dispatch
+      id: manual_metadata
+      if: steps.check_dependabot.outputs.is_dependabot == 'true' && github.event_name != 'pull_request'
+      shell: bash
+      run: |
+        # For manual dispatch, use the target dependency type directly
+        echo "dependency-type=${{ inputs.dependency-type }}" >> $GITHUB_OUTPUT
+        echo "📋 Manual dispatch: processing as ${{ inputs.dependency-type }} dependency"
 
     - name: Check dependency type
       id: check_dependency
       if: steps.check_dependabot.outputs.is_dependabot == 'true'
       shell: bash
       run: |
-        DEPENDENCY_TYPE="${{ steps.metadata.outputs.dependency-type }}"
+        # Get dependency type from appropriate source
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          DEPENDENCY_TYPE="${{ steps.metadata.outputs.dependency-type }}"
+        else
+          DEPENDENCY_TYPE="${{ steps.manual_metadata.outputs.dependency-type }}"
+        fi
+        
         TARGET_TYPE="${{ inputs.dependency-type }}"
         
         echo "Dependency type: $DEPENDENCY_TYPE"
