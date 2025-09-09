@@ -4,7 +4,7 @@ author: 'ad'
 
 inputs:
   github-token:
-    description: 'GitHub token for API calls'
+    description: 'GitHub token for API calls (use PAT for auto-approval)'
     required: false
     default: ${{ github.token }}
   dependency-type:
@@ -136,7 +136,26 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
       run: |
         echo "Approving PR #${{ steps.check_dependabot.outputs.pr_number }}"
-        gh pr review --repo "${{ github.repository }}" --approve "${{ steps.check_dependabot.outputs.pr_number }}"
+        
+        # Check if we can approve (requires PAT or specific permissions)
+        if gh auth status --hostname github.com 2>/dev/null | grep -q "Token:"; then
+          if gh pr review --repo "${{ github.repository }}" --approve "${{ steps.check_dependabot.outputs.pr_number }}" 2>/dev/null; then
+            echo "✅ PR approved successfully"
+          else
+            echo "⚠️  Could not approve PR. This might be because:"
+            echo "   1. GITHUB_TOKEN doesn't have approval permissions"
+            echo "   2. You need to use a Personal Access Token (PAT)"
+            echo "   3. The repository requires review from code owners"
+            echo ""
+            echo "💡 To enable auto-approval, use a PAT with 'repo' scope:"
+            echo "   github-token: \${{ secrets.PAT_TOKEN }}"
+            echo ""
+            echo "📝 Continuing with merge attempt..."
+          fi
+        else
+          echo "❌ GitHub token is not properly configured"
+          exit 1
+        fi
 
     - name: Merge PR
       if: steps.check_dependency.outputs.should_process == 'true'
@@ -153,7 +172,19 @@ runs:
           echo "Merging PR #${{ steps.check_dependabot.outputs.pr_number }}"
         fi
         
-        gh pr merge --repo "${{ github.repository }}" $MERGE_FLAGS "${{ steps.check_dependabot.outputs.pr_number }}"
+        # Attempt to merge
+        if gh pr merge --repo "${{ github.repository }}" $MERGE_FLAGS "${{ steps.check_dependabot.outputs.pr_number }}" 2>/dev/null; then
+          echo "✅ PR merged successfully"
+        else
+          echo "⚠️  Could not merge PR. This might be because:"
+          echo "   1. PR requires approval first"
+          echo "   2. Branch protection rules are enforced"
+          echo "   3. Merge conflicts exist"
+          echo "   4. Required status checks are pending/failing"
+          echo ""
+          echo "💡 Check the PR status and requirements at:"
+          echo "   ${{ steps.check_dependabot.outputs.pr_url }}"
+        fi
 
 branding:
   icon: 'check-circle'

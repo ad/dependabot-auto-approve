@@ -50,22 +50,24 @@ jobs:
       - name: Dependabot auto-manage
         uses: ad/dependabot-auto-approve@v1
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          dependency-type: 'direct:production'  # or 'direct:development', 'all'
-          merge-method: 'squash'                # or 'merge', 'rebase'
-          auto-merge: 'false'                   # 'true' for auto-merge (requires branch protection)
-          add-label: 'dependabot-approved'      # label for approved PRs
+          github-token: ${{ secrets.PAT_TOKEN }}    # Required for PR approval
+          dependency-type: 'direct:production'      # or 'direct:development', 'all'
+          merge-method: 'squash'                    # or 'merge', 'rebase'
+          auto-merge: 'false'                       # 'true' for auto-merge (requires branch protection)
+          add-label: 'dependabot-approved'          # label for approved PRs
 ```
 
 ## Input parameters
 
 | Parameter | Description | Required | Default |
 |-----------|-------------|----------|---------|
-| `github-token` | GitHub token for API calls | No | `${{ github.token }}` |
+| `github-token` | GitHub token for API calls (use PAT for approval) | No | `${{ github.token }}` |
 | `dependency-type` | Type of dependencies to auto-merge | No | `direct:production` |
 | `merge-method` | Merge method | No | `squash` |
 | `auto-merge` | Enable auto-merge | No | `false` |
 | `add-label` | Label for approved PRs | No | `dependabot-approved` |
+| `pr-number` | PR number (for manual dispatch workflows) | No | |
+| `pr-url` | PR URL (for manual dispatch workflows) | No | |
 
 ### Dependency types
 
@@ -91,6 +93,23 @@ permissions:
   pull-requests: write
 ```
 
+### GitHub Token
+
+For **approval functionality**, you need a Personal Access Token (PAT) because `GITHUB_TOKEN` cannot approve PRs:
+
+1. **Create a PAT** in GitHub Settings → Developer settings → Personal access tokens
+2. **Grant `repo` scope** (for private repos) or `public_repo` scope (for public repos)
+3. **Add it as a secret** in your repository: Settings → Secrets → Actions
+4. **Use it in the workflow**:
+
+```yaml
+- uses: ad/dependabot-auto-approve@v1
+  with:
+    github-token: ${{ secrets.PAT_TOKEN }}  # Use your PAT secret name
+```
+
+> **Note**: The action will still work without a PAT, but won't be able to approve PRs. It will add labels and attempt to merge (if no approval is required).
+
 ### Auto-merge
 
 To use `auto-merge: 'true'` you need to:
@@ -105,6 +124,41 @@ To use `auto-merge: 'true'` you need to:
 - ✅ Supports both `dependabot[bot]` and `app/dependabot` formats
 - ✅ Filters by dependency type
 - ✅ Uses official `dependabot/fetch-metadata` action
+
+## Troubleshooting
+
+### "GitHub Actions is not permitted to approve pull requests"
+
+This happens when using the default `GITHUB_TOKEN`. Solutions:
+
+1. **Use a Personal Access Token**:
+   ```yaml
+   - uses: ad/dependabot-auto-approve@v1
+     with:
+       github-token: ${{ secrets.PAT_TOKEN }}
+   ```
+
+2. **Or disable approval and rely on auto-merge** (if branch protection allows):
+   ```yaml
+   - uses: ad/dependabot-auto-approve@v1
+     with:
+       auto-merge: 'true'  # Requires branch protection rules
+   ```
+
+### "Could not merge PR"
+
+Common causes:
+- Branch protection rules require approval
+- Required status checks are failing
+- Merge conflicts exist
+- Repository doesn't allow auto-merge
+
+### Action skips processing
+
+Check that:
+- PR is created by Dependabot (`dependabot[bot]` or `app/dependabot`)
+- Dependency type matches your filter (`direct:production`, `direct:development`, or `all`)
+- Workflow has proper permissions (`contents: write`, `pull-requests: write`)
 
 ## Workflow examples
 
