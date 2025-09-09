@@ -6,7 +6,6 @@ inputs:
   github-token:
     description: 'GitHub token for API calls (use PAT for auto-approval)'
     required: false
-    default: ${{ github.token }}
   dependency-type:
     description: 'Type of dependencies to auto-merge (direct:production, direct:development, all)'
     required: false
@@ -37,7 +36,7 @@ runs:
       id: check_dependabot
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         # Handle manual dispatch with provided PR details
         if [ -n "${{ inputs.pr-number }}" ] && [ -n "${{ inputs.pr-url }}" ]; then
@@ -105,7 +104,7 @@ runs:
       if: steps.check_dependency.outputs.should_process == 'true' && inputs.add-label != ''
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         LABEL_NAME="${{ inputs.add-label }}"
         set -euo pipefail
@@ -124,7 +123,7 @@ runs:
       if: steps.check_dependency.outputs.should_process == 'true' && inputs.add-label != ''
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         echo "Adding label '${{ inputs.add-label }}' to PR #${{ steps.check_dependabot.outputs.pr_number }}"
         gh pr edit "${{ steps.check_dependabot.outputs.pr_url }}" --add-label "${{ inputs.add-label }}"
@@ -133,7 +132,7 @@ runs:
       if: steps.check_dependency.outputs.should_process == 'true'
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         echo "Approving PR #${{ steps.check_dependabot.outputs.pr_number }}"
         
@@ -161,7 +160,7 @@ runs:
       if: steps.check_dependency.outputs.should_process == 'true'
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         MERGE_FLAGS="--${{ inputs.merge-method }}"
         

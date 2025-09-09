@@ -61,7 +61,7 @@ jobs:
 
 | Parameter | Description | Required | Default |
 |-----------|-------------|----------|---------|
-| `github-token` | GitHub token for API calls (use PAT for approval) | No | `${{ github.token }}` |
+| `github-token` | GitHub token for API calls (use PAT for approval) | No | `github.token` |
 | `dependency-type` | Type of dependencies to auto-merge | No | `direct:production` |
 | `merge-method` | Merge method | No | `squash` |
 | `auto-merge` | Enable auto-merge | No | `false` |
